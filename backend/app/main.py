@@ -13,14 +13,18 @@ from typing import Optional
 
 from app.safety_engine import simulate
 from app.audit import record_simulation, set_decision, get_recent
+from app.ai_analyzer import generate_safer_alternative
 
 # --- CORS ---
 FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173")
 
 app = FastAPI(
-    title="ProofGuard",
-    description="Counterfactual safety layer for AI agents",
-    version="0.1.0",
+    title="ProofGuard API",
+    description="Database query safety simulation API.",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
 
 app.add_middleware(
@@ -53,6 +57,16 @@ def health():
 def run_simulation(req: SimulateRequest):
     """Run proposed SQL in an isolated sandbox and return impact analysis."""
     result = simulate(req.sql)
+
+    safer_alternative = generate_safer_alternative(
+        sql=result.get("proposed_sql", req.sql),
+        risk_level=result.get("risk_level", "unknown"),
+        changed_tables=result.get("changed_tables", []),
+        simulation_error=result.get("simulation_error"),
+    )
+
+    result["safer_alternative"] = safer_alternative
+
     record_simulation(result)
     return result
 
@@ -115,3 +129,12 @@ def examples():
             "description": "Preview which users would be affected. This is a read-only operation.",
         },
     ]
+
+
+@app.get("/", tags=["Health"])
+def root():
+    return {
+        "status": "ok",
+        "service": "ProofGuard API",
+        "docs": "/docs",
+    }
